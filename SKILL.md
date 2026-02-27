@@ -7,63 +7,96 @@ description: Interact with Tado smart thermostat. Use for reading temperature, s
 
 Use the Tado API to control your smart thermostat.
 
-## ⚠️ Authentication Required
+## Authentication
 
-**Important:** Tado no longer supports the public client ID. You must obtain your own OAuth credentials.
+Tado uses OAuth2 device code flow. You'll need:
 
-### Getting OAuth Credentials
+- **Client ID:** `1bb50063-6b0c-4d11-bd99-387f4a91cc46`
+- **Token endpoint:** `https://login.tado.com/oauth2/token`
 
-1. **Contact Tado Support** — Request API access by emailing api@tado.com
-2. **Or use an existing integration** — Libraries like Home Assistant have their own auth
-
-Once you have credentials:
-- `CLIENT_ID` — Your OAuth client ID
-- `CLIENT_SECRET` — Your OAuth client secret
-
-### Environment Variables
+### Step 1: Get Device Code
 
 ```bash
-export TADO_CLIENT_ID="your-client-id"
-export TADO_CLIENT_SECRET="your-client-secret"
+curl -s -X POST "https://login.tado.com/oauth2/device_authorize" \
+  -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+  -d "scope=offline_access"
+```
+
+Response:
+```json
+{
+  "device_code": "XXX_code_XXX",
+  "expires_in": 300,
+  "interval": 5,
+  "user_code": "7BQ5ZQ",
+  "verification_uri_complete": "https://login.tado.com/oauth2/device?user_code=7BQ5ZQ"
+}
+```
+
+### Step 2: User Authenticates
+
+Visit the `verification_uri_complete` URL and enter the user code. The user must log into their Tado account.
+
+### Step 3: Poll for Token
+
+```bash
+curl -s -X POST "https://login.tado.com/oauth2/token" \
+  -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+  -d "device_code=YOUR_DEVICE_CODE" \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:device_code"
+```
+
+Response:
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "expires_in": 600,
+  "token_type": "Bearer"
+}
+```
+
+### Step 4: Refresh Token
+
+Access tokens expire in ~10 minutes. Use the refresh token to get a new one:
+
+```bash
+curl -s -X POST "https://login.tado.com/oauth2/token" \
+  -d "client_id=1bb50063-6b0c-4d11-bd99-387f4a91cc46" \
+  -d "grant_type=refresh_token" \
+  -d "refresh_token=YOUR_REFRESH_TOKEN"
+```
+
+## Environment Variables
+
+Store these securely (not in the skill):
+```bash
 export TADO_TOKEN="your-access-token"
 export TADO_REFRESH_TOKEN="your-refresh-token"
 export TADO_HOME_ID="your-home-id"
 ```
 
-## Device Code Flow (once you have credentials)
+## Get Home ID
 
-```bash
-# 1. Request device code
-curl -s -X POST "https://login.tado.com/oauth/device_authorize" \
-  -d "client_id=$TADO_CLIENT_ID" \
-  -d "scope=offline_access"
-
-# 2. User visits URL and enters code, then poll for token
-curl -s -X POST "https://login.tado.com/oauth/token" \
-  -d "client_id=$TADO_CLIENT_ID" \
-  -d "client_secret=$TADO_CLIENT_SECRET" \
-  -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
-  -d "device_code=YOUR_DEVICE_CODE"
-```
-
-## Common Commands (once authenticated)
-
-### Get Home ID
 ```bash
 curl -s "https://my.tado.com/api/v2/me" -H "Authorization: Bearer $TADO_TOKEN"
 ```
 
-### List Zones
+Returns: `{"homes":[{"id":123456,...}]}`
+
+## List Zones
+
 ```bash
 curl -s "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/zones" -H "Authorization: Bearer $TADO_TOKEN"
 ```
 
-### Get Zone Status
+## Get Zone State
+
 ```bash
 curl -s "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/zones/$ZONE_ID/state" -H "Authorization: Bearer $TADO_TOKEN"
 ```
 
-### Set Temperature
+## Set Temperature
 
 **Until next schedule change:**
 ```bash
@@ -81,13 +114,23 @@ curl -s -X PUT "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/zones/$ZONE_ID/ov
   -d '{"setting":{"type":"HEATING","power":"ON","temperature":{"celsius":22}},"termination":{"type":"TIMER","durationInSeconds":7200}}'
 ```
 
-### Clear Override
+**Permanent:**
+```bash
+curl -s -X PUT "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/zones/$ZONE_ID/overlay" \
+  -H "Authorization: Bearer $TADO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"setting":{"type":"HEATING","power":"ON","temperature":{"celsius":20}},"termination":{"type":"MANUAL"}}'
+```
+
+## Clear Override
+
 ```bash
 curl -s -X DELETE "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/zones/$ZONE_ID/overlay" \
   -H "Authorization: Bearer $TADO_TOKEN"
 ```
 
-### Get Energy Usage
+## Get Energy Usage
+
 ```bash
 curl -s "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/energyUsage" -H "Authorization: Bearer $TADO_TOKEN"
 ```
@@ -99,7 +142,3 @@ curl -s "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/energyUsage" -H "Authori
 | `UNTIL_NEXT_TIME_BLOCK` | Reverts at next scheduled change |
 | `TIMER` | Temporary (max 12 hours / 43200 seconds) |
 | `MANUAL` | Permanent until cancelled |
-
-## Note
-
-The skill scripts require your own OAuth credentials from Tado. Email api@tado.com to request access.
