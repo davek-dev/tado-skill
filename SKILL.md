@@ -98,40 +98,12 @@ curl -s "https://my.tado.com/api/v2/homes/$TADO_HOME_ID/zones/$ZONE_ID/state" -H
 
 ## Get All Zones Summary
 
-This script gets the current temperature, target temperature, and heating status for all zones:
-
-```bash
-#!/bin/bash
-# Get summary of all zones
-
-TOKEN="${TADO_TOKEN}"
-HOME_ID="${TADO_HOME_ID}"
-
-echo "Zone | Current | Target | Heating"
-echo "------|---------|--------|--------"
-
-# List zones and get their state
-curl -s "https://my.tado.com/api/v2/homes/$HOME_ID/zones" -H "Authorization: Bearer $TOKEN" | \
-  python3 -c "
-import sys, json
-zones = json.load(sys.stdin)
-for z in zones:
-    zone_id = z['id']
-    zone_name = z['name']
-    print(zone_name)
-" | while read name; do
-  # For each zone, get the state
-  echo "$name"
-done
-```
-
-Or use this Python script for a full summary:
+This script gets the current temperature, target temperature, and heating % for all zones:
 
 ```python
 #!/usr/bin/env python3
 import os
 import requests
-import json
 
 TOKEN = os.environ.get("TADO_TOKEN")
 HOME_ID = os.environ.get("TADO_HOME_ID")
@@ -141,37 +113,42 @@ headers = {"Authorization": f"Bearer {TOKEN}"}
 # Get zones
 zones = requests.get(f"https://my.tado.com/api/v2/homes/{HOME_ID}/zones", headers=headers).json()
 
-print("Zone | Current | Target | Heating")
-print("-----|---------|--------|--------")
+print("Zone           | Current | Target | Heating")
+print("---------------|---------|--------|-------")
 
 for zone in zones:
     zid = zone["id"]
     name = zone["name"]
     state = requests.get(f"https://my.tado.com/api/v2/homes/{HOME_ID}/zones/{zid}/state", headers=headers).json()
     
+    # Current temperature from sensorDataPoints
     current = state.get("sensorDataPoints", {}).get("insideTemperature", {}).get("celsius")
+    # Target temperature from setting
     target = state.get("setting", {}).get("temperature", {}).get("celsius")
-    power = state.get("setting", {}).get("power", "OFF")
+    # Actual heating % from activityDataPoints (not from setting!)
+    heating = state.get("activityDataPoints", {}).get("heatingPower", {}).get("percentage", 0)
     
     c = f"{current:.1f}°C" if current else "N/A"
-    t = f"{target:.1f}°C" if target else "-"
-    p = "ON" if power == "ON" else "OFF"
+    t = f"{target:.0f}°C" if target else "-"
+    h = f"{heating:.0f}%" if heating else "OFF"
     
-    print(f"{name:15} | {c:8} | {t:8} | {p}")
+    print(f"{name:14} | {c:7} | {t:6} | {h:>6}")
 ```
 
 Example output:
 ```
-Zone           | Current | Target  | Heating
----------------|---------|---------|--------
-Kitchen        | 18.2°C  | 18.0°C  | ON
-Living Room    | 16.8°C  | 17.0°C  | ON
-Downstairs Off | 15.2°C  | 14.0°C  | ON
-Master Bedroom | 17.1°C  | 14.0°C  | ON
-Cora's Room    | 17.7°C  | 16.0°C  | ON
-Upstairs Office| 19.1°C  | 19.0°C  | ON
-Spare Bedroom  | 19.6°C  | -       | OFF
+Zone           | Current | Target | Heating
+---------------|---------|--------|-------
+Kitchen        | 18.2°C  | 18°C   | 45%
+Living Room    | 16.8°C  | 17°C   | 0%
+Downstairs Off | 15.2°C  | 14°C   | 78%
+Master Bedroom | 17.1°C  | 14°C   | 0%
+Cora's Room    | 17.7°C  | 16°C   | 23%
+Upstairs Office| 19.1°C  | 19°C   | OFF
+Spare Bedroom  | 19.6°C  | -      | OFF
 ```
+
+**Note:** Use `activityDataPoints.heatingPower.percentage` to get actual heating status, not `setting.power` which only shows the target.
 
 ## Set Temperature
 
