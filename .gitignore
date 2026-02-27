@@ -1,1 +1,7 @@
+# Tado
 data/
+.env
+*.env
+token*
+*secret*
+*credential*
